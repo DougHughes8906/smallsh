@@ -4,7 +4,7 @@
 
 int main() {
 
-  startShell();
+  runShell();
 
   return 0;
 }
