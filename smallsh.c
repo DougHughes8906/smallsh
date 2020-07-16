@@ -21,7 +21,7 @@ void bkgCleanup(int* bkgProcesses, int* bkgArrSize, int* numBkgs) {
 void executeOther(int maxStrLen, int numArgs, char** argms, 
 	char command[maxStrLen], char inputFile[maxStrLen], 
 	char outputFile[maxStrLen], int bkgFlag, int bkgOn, int* bkgProcesses,
-	int* bkgArrSize, int* numBkgs) {
+	int* bkgArrSize, int* numBkgs, int* exitStatus, int* exitLast) {
 
 	// check to see if this is supposed to be a background process
 	// and if background processes are currently allowed 
@@ -38,7 +38,7 @@ void executeOther(int maxStrLen, int numArgs, char** argms,
 
 // execute a built-in command, this could only be cd or status
 void executeBuiltin(int maxStrLen, int numArgs, char** argms, 
-	char command[maxStrLen]) {
+	char command[maxStrLen], int* exitStatus, int lastSignal, int* exitLast) {
 	// see if this si a cd command
 	if (strcmp(command, "cd") == 0) {
 		// value returned by the chdir function
@@ -68,15 +68,22 @@ void executeBuiltin(int maxStrLen, int numArgs, char** argms,
 	
 	// the only other possible command is status
 	else {
-
+		// the last non builtin foreground process exited normally
+		if (*exitLast) {
+			printf("exit value %d\n", *exitStatus);
+		}
+		// the last non builtin foreground was terminated with a signal
+		else {
+			printf("terminated by signal %d\n", lastSignal);
+		}
 	}
 }
-
 
 // actions the given commands
 void action(int maxStrLen, int numArgs, char** argms, char command[maxStrLen],
 	char inputFile[maxStrLen], char outputFile[maxStrLen], int bkgFlag, 
-	int bkgOn, int* bkgProcesses, int* bkgArrSize, int* numBkgs) {
+	int bkgOn, int* bkgProcesses, int* bkgArrSize, int* numBkgs, 
+	int* exitStatus, int lastSignal, int* exitLast) {
 
  	printf("Command entered: %s\n", command);
 
@@ -95,12 +102,13 @@ void action(int maxStrLen, int numArgs, char** argms, char command[maxStrLen],
 	if (strcmp(command, "cd") == 0 || strcmp(command, "status") == 0) {
 		// built-in commands will ignore output/input redirection and
 		// will always be run in the foreground
-		executeBuiltin(maxStrLen, numArgs, argms, command);
+		executeBuiltin(maxStrLen, numArgs, argms, command, exitStatus, lastSignal,
+			exitLast);
 	}
 	// this is not a built-in command
 	else {
 		executeOther(maxStrLen, numArgs, argms, command, inputFile, outputFile,
-			bkgFlag, bkgOn, bkgProcesses, bkgArrSize, numBkgs);
+			bkgFlag, bkgOn, bkgProcesses, bkgArrSize, numBkgs, exitStatus, exitLast);
 	}
 }
 
@@ -317,13 +325,21 @@ void runShell() {
 	int* bkgProcesses = malloc(bkgArrSize * sizeof(int));
 	// holds the number of currently runnign background processes
 	int numBkgs = 0;
+	// holds the exit status of the last non-builtin foreground command
+	int exitStatus = 0;
+	// holds the signal code of the last terminating signal
+	int lastSignal = -1;
+	// holds 1 if the last non builtin foreground process terminted 
+	// normally and 0 if it was terminated with a signal
+	int exitLast = 1;
 
  
   while (strcmp(command, exitStr) != 0) {
 
     // action the last issued command (which can't be exit)
 		action(MAX_LEN, numArgs, argms, command, inputFile, outputFile, bkgFlag,
-			bkgOn, bkgProcesses, &bkgArrSize, &numBkgs);
+			bkgOn, bkgProcesses, &bkgArrSize, &numBkgs, &exitStatus, lastSignal, 
+			&exitLast);
 
 		// clean up background processes
 		bkgCleanup(bkgProcesses, &bkgArrSize, &numBkgs);
