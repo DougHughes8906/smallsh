@@ -3,11 +3,80 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <unistd.h>
+#include <sys/types.h>
+
+// kills all processes/jobs that the shell started
+void exitShell() {
+	return;
+}
+
+// checks to see what background processes (if any) have terminated
+// and if so, clean them up and print a message to the shell
+void bkgCleanup(int* bkgProcesses, int* bkgArrSize, int* numBkgs) {
+	return;
+}
+
+// executes any command that is not built in to the shell
+void executeOther(int maxStrLen, int numArgs, char** argms, 
+	char command[maxStrLen], char inputFile[maxStrLen], 
+	char outputFile[maxStrLen], int bkgFlag, int bkgOn, int* bkgProcesses,
+	int* bkgArrSize, int* numBkgs) {
+
+	// check to see if this is supposed to be a background process
+	// and if background processes are currently allowed 
+	if (bkgFlag && bkgOn) {
+
+	}
+
+	// this will be executed as a foreground process
+	else {
+
+	}
+}
+
+
+// execute a built-in command, this could only be cd or status
+void executeBuiltin(int maxStrLen, int numArgs, char** argms, 
+	char command[maxStrLen]) {
+	// see if this si a cd command
+	if (strcmp(command, "cd") == 0) {
+		// value returned by the chdir function
+		// -1 for error
+		// 0 for success
+		int exitVal;
+		// no arguments entered, so this command should bring the user
+		// to the home directory
+		if (numArgs == 0) {
+			// get the name of the home directory
+			char* homeDir = getenv("HOME");
+			exitVal = chdir(homeDir);
+		}
+
+		// the first argument is passed as the path of the directory to 
+		// change to, all other arguments are ignored
+		else {
+			exitVal = chdir(argms[0]);
+		}
+
+		// show the current working directory after using chdir
+		char curWorkDir[1000];
+		getcwd(curWorkDir, sizeof(curWorkDir));
+		printf("Working directory after call to cd: %s\n", curWorkDir);
+
+	}
+	
+	// the only other possible command is status
+	else {
+
+	}
+}
 
 
 // actions the given commands
 void action(int maxStrLen, int numArgs, char** argms, char command[maxStrLen],
-	char inputFile[maxStrLen], char outputFile[maxStrLen], int bkgFlag) {
+	char inputFile[maxStrLen], char outputFile[maxStrLen], int bkgFlag, 
+	int bkgOn, int* bkgProcesses, int* bkgArrSize, int* numBkgs) {
 
  	printf("Command entered: %s\n", command);
 
@@ -20,6 +89,19 @@ void action(int maxStrLen, int numArgs, char** argms, char command[maxStrLen],
 	printf("Output file: %s\n", outputFile);
 
 	printf("bkgFlag: %d\n", bkgFlag);
+
+	// see if this a built-in command (besides exit which would have
+	// already been handled by the runShell function)
+	if (strcmp(command, "cd") == 0 || strcmp(command, "status") == 0) {
+		// built-in commands will ignore output/input redirection and
+		// will always be run in the foreground
+		executeBuiltin(maxStrLen, numArgs, argms, command);
+	}
+	// this is not a built-in command
+	else {
+		executeOther(maxStrLen, numArgs, argms, command, inputFile, outputFile,
+			bkgFlag, bkgOn, bkgProcesses, bkgArrSize, numBkgs);
+	}
 }
 
 
@@ -44,6 +126,15 @@ int readWord(char* buffer, size_t bufSize, int *curBufInd, int maxStrLen,
 
 	// set the last character for the word as the null terminator
 	wordBuf[curWordInd] = '\0';
+
+	// check to see if the word is $$, in which case it should be
+	// changed to pid of the shell process
+	if (strcmp(wordBuf, "$$") == 0) {
+		pid_t curPID = getpid();
+		char pidStr[maxStrLen];
+		sprintf(pidStr, "%d", curPID);
+		strcpy(wordBuf, pidStr);
+	}
 	
 	// clear out the whitespace until you hit a new word or the end of
 	// the line
@@ -215,11 +306,28 @@ void runShell() {
 	// keeps track of the number of arguments in the latest command. Does not
 	// count output/input redirection or the final & if there is one
 	int numArgs = 0;
+	// set to 1 when background processes are allowed and 0 if background
+	// processes are not allowed. This can be toggled by the user with a
+	// CTRL-Z command (SIGSTP signal)
+	int bkgOn = 1;
+	// holds the current size of the bkgProcesses array
+	int bkgArrSize = 5;
+	// an integer array that will hold the PIDs of all running background 
+	// processes
+	int* bkgProcesses = malloc(bkgArrSize * sizeof(int));
+	// holds the number of currently runnign background processes
+	int numBkgs = 0;
+
  
   while (strcmp(command, exitStr) != 0) {
 
     // action the last issued command (which can't be exit)
-		action(MAX_LEN, numArgs, argms, command, inputFile, outputFile, bkgFlag);
+		action(MAX_LEN, numArgs, argms, command, inputFile, outputFile, bkgFlag,
+			bkgOn, bkgProcesses, &bkgArrSize, &numBkgs);
+
+		// clean up background processes
+		bkgCleanup(bkgProcesses, &bkgArrSize, &numBkgs);
+
     printf(": ");
 		fflush(stdout);
 
@@ -236,10 +344,20 @@ void runShell() {
     free(buffer); 
   }
 
+	printf("exit shell function about to be entered\n");
+	// the user has decided to exit the shell, kill all processes and/or 
+	// jobs the shell has started and exit
+	exitShell();
+
   // free memory allocated for the command arguments
   for (int i = 0; i < NUM_ARGS; i++) {
     free(argms[i]);
     argms[i] = NULL;
   }
   free(argms);
+	argms = NULL;
+
+	// free memory allocated for the background process ids
+	free(bkgProcesses);
+	bkgProcesses = NULL;
 }
