@@ -8,16 +8,57 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <sys/wait.h>
+#include <signal.h>
 
-// kills all processes/jobs that the shell started
-void exitShell() {
-	return;
+// kills all background processes that are still running
+void exitShell(int* bkgProcesses, int numBkgs) {	
+	for (int i = 0; i < numBkgs; i++) {
+		kill(bkgProcesses[i], SIGKILL);
+	}	
 }
 
 // checks to see what background processes (if any) have terminated
 // and if so, clean them up and print a message to the shell
 void bkgCleanup(int* bkgProcesses, int* bkgArrSize, int* numBkgs) {
-	return;
+
+	int i = 0;
+	while (i < *numBkgs) {
+		// check to see if the process has finished
+		int bkgStatus;
+		// will return 0 if the process is not finished
+		int processFinished = waitpid(bkgProcesses[i], &bkgStatus, WNOHANG);
+
+		if (processFinished) {
+			printf("background pid %d is done: ", bkgProcesses[i]);
+			fflush(stdout);
+			// check to see if the process exited normally or not
+			if (WIFEXITED(bkgStatus)) {
+				int exVal = WEXITSTATUS(bkgStatus);					
+
+				printf("exit value %d\n", exVal);
+				fflush(stdout);	
+			}
+			// the process was terminated by a signal
+			else {	
+				int sigVal = WTERMSIG(bkgStatus);
+				// print a message detailing the signal
+				printf("terminated by signal %d\n", sigVal);
+				fflush(stdout);
+			}
+
+			// remove the process from the array by swapping in the last
+			// element and decrementing the # of elements
+			int lastPid = bkgProcesses[(*numBkgs) - 1];
+			bkgProcesses[i] = lastPid;
+			(*numBkgs)--;
+
+			// decrement the counter so the process just swapped down will also
+			// be checked
+			i--;
+		}		
+
+		i++;
+	}
 }
 
 // saves a given background process id in the bkgProcesses array and
@@ -306,6 +347,11 @@ void action(int maxStrLen, int numArgs, char** argms, char command[maxStrLen],
 			exitLast);
 	}
 
+	// blank line or comment line, do nothing
+	else if (strcmp(command, "blank") == 0) {
+		return;
+	}
+
 	// this is not a built-in command
 	else {
 		executeOther(maxStrLen, numArgs, argms, command, inputFile, outputFile,
@@ -565,7 +611,7 @@ void runShell() {
 	printf("exit shell function about to be entered\n");
 	// the user has decided to exit the shell, kill all processes and/or 
 	// jobs the shell has started and exit
-	exitShell();
+	exitShell(bkgProcesses, numBkgs);
 
   // free memory allocated for the command arguments
   for (int i = 0; i < NUM_ARGS; i++) {
