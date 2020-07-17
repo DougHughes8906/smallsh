@@ -10,6 +10,46 @@
 #include <sys/wait.h>
 #include <signal.h>
 
+// global flag that is set to 1 when background processes are 
+// allowed and 0 when they are not. This needs to be a global 
+// variable because we want this mode to be toggled by the 
+// SIGTSTP signal
+int bkgOn = 1;
+// global flag that holds 1 if there is foreground process active 
+// and 0 otherwise. This needs to be a global variable for use by the
+// SIGTSTP handler
+int foreActive = 0;
+// global flag that holds 1 if a signal was last raised during an
+// active process and 0 otherwise
+int sigRaised = 0;
+
+// handler in the shell for SIGTSTP signals. Toggles the bkgOn
+// flag to toggle on/off foreground-only mode
+void handle_SIGTSTP(int signo) {
+
+	// if a foreground process is running, don't do anything but indicate
+	// that the signal was raised
+	if (foreActive) {
+		sigRaised = 1;
+		return;
+	}	
+
+	// turn on foreground only mode
+	if (bkgOn) {
+		bkgOn = 0;
+		char message[] = "\nEntering foreground-only mode (& is now ignored)\n: ";
+		write(STDOUT_FILENO, message, 52);
+	}
+
+	// turn off foreground only mode
+	else {
+		bkgOn = 1;
+		char message[] = "\nExiting foreground-only mode\n: ";
+		write(STDOUT_FILENO, message, 32);
+	}
+}
+
+
 // kills all background processes that are still running
 void exitShell(int* bkgProcesses, int numBkgs) {	
 	for (int i = 0; i < numBkgs; i++) {
@@ -89,7 +129,7 @@ void insertBkg(int pid, int* bkgProcesses, int* bkgArrSize, int* numBkgs) {
 // executes any command that is not built in to the shell
 void executeOther(int maxStrLen, int numArgs, char** argms, 
 	char command[maxStrLen], char inputFile[maxStrLen], 
-	char outputFile[maxStrLen], int bkgFlag, int bkgOn, int* bkgProcesses,
+	char outputFile[maxStrLen], int bkgFlag, int* bkgProcesses,
 	int* bkgArrSize, int* numBkgs, int* exitStatus, int* exitLast,
 	int* lastSignal) {
 
@@ -211,6 +251,12 @@ void executeOther(int maxStrLen, int numArgs, char** argms,
 			}					
 			execArr[numArgs + 1] = NULL;
 
+			// set the SIGTSTP signal to be ignored by child processes
+			struct sigaction ignore_action = {0};
+			ignore_action.sa_handler = SIG_IGN;
+
+			sigaction(SIGTSTP, &ignore_action, NULL);
+
 			// set the SIGINT signal for the child process if it is a 
 			// foreground process to terminate the process
 			if (!bkgFlag || !bkgOn) {
@@ -261,8 +307,29 @@ void executeOther(int maxStrLen, int numArgs, char** argms,
 				// variable will hold the exit status of the child
 				int childExitStat;
 
+				foreActive = 1;
 				// wait for the child process to complete
 				waitpid(spawnpid, &childExitStat, 0);
+				foreActive = 0;
+				if (sigRaised) {
+					// see if a SIGTSTP signal was raised as the process
+					// was running. In which case foreground only mode
+					// should be toggled
+					if (bkgOn) {
+						bkgOn = 0;
+						printf("Entering foreground-only mode (& is now ignored)\n");
+						fflush(stdout);
+					}
+
+					// turn off foreground only mode
+					else {
+						bkgOn = 1;
+						printf("Exiting foreground-only mode\n");
+						fflush(stdout);
+					}
+
+					sigRaised = 0;
+				}
 
 				// check to see if the process exited normally or not
 				if (WIFEXITED(childExitStat)) {
@@ -332,21 +399,9 @@ void executeBuiltin(int maxStrLen, int numArgs, char** argms,
 // actions the given commands
 void action(int maxStrLen, int numArgs, char** argms, char command[maxStrLen],
 	char inputFile[maxStrLen], char outputFile[maxStrLen], int bkgFlag, 
-	int bkgOn, int* bkgProcesses, int* bkgArrSize, int* numBkgs, 
+	int* bkgProcesses, int* bkgArrSize, int* numBkgs, 
 	int* exitStatus, int* lastSignal, int* exitLast) {
-
- 	printf("Command entered: %s\n", command);
-
-	printf("Command arguments:\n");
-	for (int i = 0; i < numArgs; i++) {
-		printf("%s\n", argms[i]);
-	}
-
-	printf("Input file: %s\n", inputFile);
-	printf("Output file: %s\n", outputFile);
-
-	printf("bkgFlag: %d\n", bkgFlag);
-
+	
 	// see if this a built-in command (besides exit which would have
 	// already been handled by the runShell function)
 	if (strcmp(command, "cd") == 0 || strcmp(command, "status") == 0) {
@@ -364,7 +419,7 @@ void action(int maxStrLen, int numArgs, char** argms, char command[maxStrLen],
 	// this is not a built-in command
 	else {
 		executeOther(maxStrLen, numArgs, argms, command, inputFile, outputFile,
-			bkgFlag, bkgOn, bkgProcesses, bkgArrSize, numBkgs, exitStatus, exitLast,
+			bkgFlag, bkgProcesses, bkgArrSize, numBkgs, exitStatus, exitLast,
 			lastSignal);
 	}
 }
@@ -447,15 +502,14 @@ int readIn(char* buffer, size_t bufSize, int maxStrLen,
   if (curInd == bufSize || buffer[curInd] == '\n' ||
     buffer[curInd] == '#') {
  		strcpy(command, "blank");   
-    printf("Blank or a comment was entered\n");
+    
 		// nothing further needs to be updated given that all  other command
 		// variables will be ignored when no command is entered. Indicate 
 		// that there are 0 command arguments
 		return 0;
   }
 
-  else {
-    printf("A command that needs to be processed was entered.\n");
+  else { 
 
    	// the first word on the line is the command, read it in and save it
    	// to command
@@ -545,6 +599,17 @@ void runShell() {
 
 	sigaction(SIGINT, &ignore_action, NULL);
 
+	// set SIGTSTP signals sent to the shell to toggle
+	// foreground only mode (initially set off)
+	struct sigaction sigtstp_action = {0};
+	sigtstp_action.sa_handler = handle_SIGTSTP;
+	// block all catchable signals while handle_SIGTSTP is running
+	sigfillset(&sigtstp_action.sa_mask);
+	// allow for automatic restart of interrupted systems
+	sigtstp_action.sa_flags = SA_RESTART;
+	// install the handler
+	sigaction(SIGTSTP, &sigtstp_action, NULL);
+
   const int NUM_ARGS = 512;
   const int MAX_LEN = 2048;
 
@@ -576,11 +641,7 @@ void runShell() {
 	int bkgFlag = 0;
 	// keeps track of the number of arguments in the latest command. Does not
 	// count output/input redirection or the final & if there is one
-	int numArgs = 0;
-	// set to 1 when background processes are allowed and 0 if background
-	// processes are not allowed. This can be toggled by the user with a
-	// CTRL-Z command (SIGSTP signal)
-	int bkgOn = 1;
+	int numArgs = 0;	
 	// holds the current size of the bkgProcesses array
 	int bkgArrSize = 5;
 	// an integer array that will hold the PIDs of all running background 
@@ -601,7 +662,7 @@ void runShell() {
 
     // action the last issued command (which can't be exit)
 		action(MAX_LEN, numArgs, argms, command, inputFile, outputFile, bkgFlag,
-			bkgOn, bkgProcesses, &bkgArrSize, &numBkgs, &exitStatus, &lastSignal, 
+			bkgProcesses, &bkgArrSize, &numBkgs, &exitStatus, &lastSignal, 
 			&exitLast);
 
 		// clean up background processes
@@ -622,8 +683,7 @@ void runShell() {
     // free the memory allocated for the buffer
     free(buffer); 
   }
-
-	printf("exit shell function about to be entered\n");
+	
 	// the user has decided to exit the shell, kill all processes and/or 
 	// jobs the shell has started and exit
 	exitShell(bkgProcesses, numBkgs);
