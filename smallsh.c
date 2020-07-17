@@ -5,6 +5,9 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <sys/wait.h>
 
 // kills all processes/jobs that the shell started
 void exitShell() {
@@ -17,22 +20,217 @@ void bkgCleanup(int* bkgProcesses, int* bkgArrSize, int* numBkgs) {
 	return;
 }
 
+// saves a given background process id in the bkgProcesses array and
+// resizes the array if necessary
+void insertBkg(int pid, int* bkgProcesses, int* bkgArrSize, int* numBkgs) {
+	// resize the array before inserting
+	if (*bkgArrSize == *numBkgs) {
+		int newSize = *bkgArrSize * 2;
+		int* newArr = malloc(sizeof(int) * newSize);
+		// copy the pids into the new array
+		for (int i = 0; i < *numBkgs; i++) {
+			newArr[i] = bkgProcesses[i];
+		}
+	
+		// free the previous array
+		free(bkgProcesses);
+		// set the pointer to the new array
+		bkgProcesses = newArr;
+		newArr = NULL;
+		*bkgArrSize = newSize;
+	}
+
+	// add the new pid
+	bkgProcesses[*numBkgs] = pid;
+	(*numBkgs)++;
+}
+
 // executes any command that is not built in to the shell
 void executeOther(int maxStrLen, int numArgs, char** argms, 
 	char command[maxStrLen], char inputFile[maxStrLen], 
 	char outputFile[maxStrLen], int bkgFlag, int bkgOn, int* bkgProcesses,
-	int* bkgArrSize, int* numBkgs, int* exitStatus, int* exitLast) {
+	int* bkgArrSize, int* numBkgs, int* exitStatus, int* exitLast,
+	int* lastSignal) {
 
-	// check to see if this is supposed to be a background process
-	// and if background processes are currently allowed 
-	if (bkgFlag && bkgOn) {
+	// fork off a child process
+	int spawnpid = -10;
 
-	}
+	spawnpid = fork();
 
-	// this will be executed as a foreground process
-	else {
+	switch (spawnpid) {
+		// fork failure, child could not be created
+		case -1:
+			perror("Child process could not be created\n");
+			fflush(stdout);
+			break;
 
-	}
+		// case entered by the child process
+		case 0:
+			// handle input redirection
+			if (strcmp(inputFile, "") != 0) {
+
+				// attempt to open the input file
+				int inputFD = open(inputFile, O_RDONLY);
+				// check to see if the file could not be opened
+				if (inputFD == -1) {
+					perror("Error on input file open: ");
+					fflush(stdout);
+					exit(1);
+				}
+			
+				// file opened successfully, redirect input
+				int inputDupRes = dup2(inputFD, 0);
+				// check to see if the input redirection has succeeded
+				if (inputDupRes == -1) {
+					perror("Error on input redirection: ");
+					fflush(stdout);
+					exit(1);
+				}					
+			}
+			// if this will be a background process, input needs to be
+			// redirected
+			else if (bkgFlag && bkgOn) {
+				// attempt to open the input file
+				int inputFD = open("/dev/null", O_RDONLY);
+				// check to see if the file could not be opened
+				if (inputFD == -1) {
+					perror("Error on input file open: ");
+					fflush(stdout);
+					exit(1);
+				}
+			
+				// file opened successfully, redirect input
+				int inputDupRes = dup2(inputFD, 0);
+				// check to see if the input redirection has succeeded
+				if (inputDupRes == -1) {
+					perror("Error on input redirection: ");
+					fflush(stdout);
+					exit(1);
+				}
+			}	
+
+			// handle output redirection
+			if (strcmp(outputFile, "") != 0) {
+	
+				// attempt to open the output file as write only, create a
+				// new file if it doesn't exist, to truncate if it does
+				// exist. If new file is being created set permissions to
+				// read/write for the user and read only for all other users 
+				int outputFD = open(outputFile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+				// check to see if the file could not be opened
+				if (outputFD == -1) {
+					perror("Error on output file open: ");
+					fflush(stdout);
+					exit(1);
+				}
+			
+				// file opened successfully, redirect output
+				int outputDupRes = dup2(outputFD, 1);
+				// check to see if the output redirection has succeeded
+				if (outputDupRes == -1) {
+					perror("Error on output redirection: ");
+					fflush(stdout);
+					exit(1);
+				}					
+			}
+			// if this will be a background process, output needs to be
+			// redirected
+			else if (bkgFlag && bkgOn) {
+				int outputFD = open("/dev/null", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+				// check to see if the file could not be opened
+				if (outputFD == -1) {
+					perror("Error on output file open: ");
+					fflush(stdout);
+					exit(1);
+				}
+			
+				// file opened successfully, redirect output
+				int outputDupRes = dup2(outputFD, 1);
+				// check to see if the output redirection has succeeded
+				if (outputDupRes == -1) {
+					perror("Error on output redirection: ");
+					fflush(stdout);
+					exit(1);
+				}
+
+			}	
+
+			// attempt to execute the non builtin process
+			
+			// build an array that holds the name of the command, the command
+			// arguments and NULL as the last element for use by the execvp
+			// function
+			char** execArr = malloc(sizeof(char*) * numArgs + 2);
+		
+			execArr[0] = malloc(maxStrLen * sizeof(char));
+			strcpy(execArr[0], command);	
+			for (int i = 0; i < numArgs; i++) {
+				execArr[i + 1] = malloc(maxStrLen * sizeof(char));
+				strcpy(execArr[i + 1], argms[i]); 
+			}					
+			execArr[numArgs + 1] = NULL;
+
+			execvp(command, execArr);	
+
+			// free the memory allocated for the execArr (this is only for the
+			// case that the call to execvp fails, otherwise no need to 
+			// free the memory as it is automatically released on a 
+			// successful call to execvp
+			for (int i = 0; i < numArgs + 1; i++) {
+				free(execArr[i]);
+				execArr[i] = NULL;
+			}
+			free(execArr);
+			execArr = NULL;
+
+			// execvp has failed
+			perror("Error on command execution: ");
+			fflush(stdout);
+			exit(1);	
+					
+			break;
+
+		// case entered by the parent process
+		default:
+
+			// check to see if the child process will be executed in the 
+			// background
+			if (bkgFlag && bkgOn) {
+				// output a message with pid for the background process
+				printf("background pid is %d\n", spawnpid);
+				fflush(stdout);
+
+				// save the pid of the background process
+				insertBkg(spawnpid, bkgProcesses, bkgArrSize, numBkgs);				
+			}
+
+			// the process will be executed in the foreground. Wait for
+			// completion
+			else {
+
+				// variable will hold the exit status of the child
+				int childExitStat;
+
+				// wait for the child process to complete
+				waitpid(spawnpid, &childExitStat, 0);
+
+				// check to see if the process exited normally or not
+				if (WIFEXITED(childExitStat)) {
+					*exitLast = 1;
+					*exitStatus = WEXITSTATUS(childExitStat);					
+				}
+				// the process was terminated by a signal
+				else {
+					*exitLast = 0;
+					*lastSignal = WTERMSIG(childExitStat);
+					// print a message detailing the signal
+					printf("terminated by signal %d\n", *lastSignal);
+					fflush(stdout);
+				}
+			}
+
+			break;
+	}	
 }
 
 
@@ -71,10 +269,12 @@ void executeBuiltin(int maxStrLen, int numArgs, char** argms,
 		// the last non builtin foreground process exited normally
 		if (*exitLast) {
 			printf("exit value %d\n", *exitStatus);
+			fflush(stdout);
 		}
 		// the last non builtin foreground was terminated with a signal
 		else {
 			printf("terminated by signal %d\n", lastSignal);
+			fflush(stdout);
 		}
 	}
 }
@@ -83,7 +283,7 @@ void executeBuiltin(int maxStrLen, int numArgs, char** argms,
 void action(int maxStrLen, int numArgs, char** argms, char command[maxStrLen],
 	char inputFile[maxStrLen], char outputFile[maxStrLen], int bkgFlag, 
 	int bkgOn, int* bkgProcesses, int* bkgArrSize, int* numBkgs, 
-	int* exitStatus, int lastSignal, int* exitLast) {
+	int* exitStatus, int* lastSignal, int* exitLast) {
 
  	printf("Command entered: %s\n", command);
 
@@ -102,13 +302,15 @@ void action(int maxStrLen, int numArgs, char** argms, char command[maxStrLen],
 	if (strcmp(command, "cd") == 0 || strcmp(command, "status") == 0) {
 		// built-in commands will ignore output/input redirection and
 		// will always be run in the foreground
-		executeBuiltin(maxStrLen, numArgs, argms, command, exitStatus, lastSignal,
+		executeBuiltin(maxStrLen, numArgs, argms, command, exitStatus, *lastSignal,
 			exitLast);
 	}
+
 	// this is not a built-in command
 	else {
 		executeOther(maxStrLen, numArgs, argms, command, inputFile, outputFile,
-			bkgFlag, bkgOn, bkgProcesses, bkgArrSize, numBkgs, exitStatus, exitLast);
+			bkgFlag, bkgOn, bkgProcesses, bkgArrSize, numBkgs, exitStatus, exitLast,
+			lastSignal);
 	}
 }
 
@@ -338,7 +540,7 @@ void runShell() {
 
     // action the last issued command (which can't be exit)
 		action(MAX_LEN, numArgs, argms, command, inputFile, outputFile, bkgFlag,
-			bkgOn, bkgProcesses, &bkgArrSize, &numBkgs, &exitStatus, lastSignal, 
+			bkgOn, bkgProcesses, &bkgArrSize, &numBkgs, &exitStatus, &lastSignal, 
 			&exitLast);
 
 		// clean up background processes
