@@ -211,6 +211,15 @@ void executeOther(int maxStrLen, int numArgs, char** argms,
 			}					
 			execArr[numArgs + 1] = NULL;
 
+			// set the SIGINT signal for the child process if it is a 
+			// foreground process to terminate the process
+			if (!bkgFlag || !bkgOn) {
+				struct sigaction default_action = {0};
+				default_action.sa_handler = SIG_DFL;
+
+				sigaction(SIGINT, &default_action, NULL);
+			}
+			
 			execvp(command, execArr);	
 
 			// free the memory allocated for the execArr (this is only for the
@@ -529,6 +538,12 @@ int readIn(char* buffer, size_t bufSize, int maxStrLen,
 // starts the shell and enters a loop that takes in commands until
 // the user wants to exit
 void runShell() {
+
+	// set the SIGINT signal to be ignored by the shell
+	struct sigaction ignore_action = {0};
+	ignore_action.sa_handler = SIG_IGN;
+
+	sigaction(SIGINT, &ignore_action, NULL);
 
   const int NUM_ARGS = 512;
   const int MAX_LEN = 2048;
