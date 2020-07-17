@@ -101,7 +101,7 @@ void executeOther(int maxStrLen, int numArgs, char** argms,
 	switch (spawnpid) {
 		// fork failure, child could not be created
 		case -1:
-			perror("Child process could not be created\n");
+			perror("Child process could not be created");
 			fflush(stdout);
 			break;
 
@@ -114,7 +114,7 @@ void executeOther(int maxStrLen, int numArgs, char** argms,
 				int inputFD = open(inputFile, O_RDONLY);
 				// check to see if the file could not be opened
 				if (inputFD == -1) {
-					perror("Error on input file open: ");
+					perror("Error on input file open ");
 					fflush(stdout);
 					exit(1);
 				}
@@ -123,7 +123,7 @@ void executeOther(int maxStrLen, int numArgs, char** argms,
 				int inputDupRes = dup2(inputFD, 0);
 				// check to see if the input redirection has succeeded
 				if (inputDupRes == -1) {
-					perror("Error on input redirection: ");
+					perror("Error on input redirection ");
 					fflush(stdout);
 					exit(1);
 				}					
@@ -135,7 +135,7 @@ void executeOther(int maxStrLen, int numArgs, char** argms,
 				int inputFD = open("/dev/null", O_RDONLY);
 				// check to see if the file could not be opened
 				if (inputFD == -1) {
-					perror("Error on input file open: ");
+					perror("Error on input file open ");
 					fflush(stdout);
 					exit(1);
 				}
@@ -144,7 +144,7 @@ void executeOther(int maxStrLen, int numArgs, char** argms,
 				int inputDupRes = dup2(inputFD, 0);
 				// check to see if the input redirection has succeeded
 				if (inputDupRes == -1) {
-					perror("Error on input redirection: ");
+					perror("Error on input redirection ");
 					fflush(stdout);
 					exit(1);
 				}
@@ -160,7 +160,7 @@ void executeOther(int maxStrLen, int numArgs, char** argms,
 				int outputFD = open(outputFile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 				// check to see if the file could not be opened
 				if (outputFD == -1) {
-					perror("Error on output file open: ");
+					perror("Error on output file open ");
 					fflush(stdout);
 					exit(1);
 				}
@@ -169,7 +169,7 @@ void executeOther(int maxStrLen, int numArgs, char** argms,
 				int outputDupRes = dup2(outputFD, 1);
 				// check to see if the output redirection has succeeded
 				if (outputDupRes == -1) {
-					perror("Error on output redirection: ");
+					perror("Error on output redirection ");
 					fflush(stdout);
 					exit(1);
 				}					
@@ -180,7 +180,7 @@ void executeOther(int maxStrLen, int numArgs, char** argms,
 				int outputFD = open("/dev/null", O_WRONLY | O_CREAT | O_TRUNC, 0644);
 				// check to see if the file could not be opened
 				if (outputFD == -1) {
-					perror("Error on output file open: ");
+					perror("Error on output file open ");
 					fflush(stdout);
 					exit(1);
 				}
@@ -189,7 +189,7 @@ void executeOther(int maxStrLen, int numArgs, char** argms,
 				int outputDupRes = dup2(outputFD, 1);
 				// check to see if the output redirection has succeeded
 				if (outputDupRes == -1) {
-					perror("Error on output redirection: ");
+					perror("Error on output redirection ");
 					fflush(stdout);
 					exit(1);
 				}
@@ -225,7 +225,7 @@ void executeOther(int maxStrLen, int numArgs, char** argms,
 			execArr = NULL;
 
 			// execvp has failed
-			perror("Error on command execution: ");
+			perror("Error on command execution ");
 			fflush(stdout);
 			exit(1);	
 					
@@ -298,11 +298,11 @@ void executeBuiltin(int maxStrLen, int numArgs, char** argms,
 			exitVal = chdir(argms[0]);
 		}
 
-		// show the current working directory after using chdir
-		char curWorkDir[1000];
-		getcwd(curWorkDir, sizeof(curWorkDir));
-		printf("Working directory after call to cd: %s\n", curWorkDir);
-
+		// check to see if their was an error 
+		if (exitVal == -1) {
+			printf("Error: %s is not a valid directory\n", argms[0]);
+			fflush(stdout);
+		}	
 	}
 	
 	// the only other possible command is status
