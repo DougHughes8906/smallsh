@@ -433,28 +433,42 @@ int readWord(char* buffer, size_t bufSize, int *curBufInd, int maxStrLen,
 	char wordBuf[maxStrLen])  {
 
 	int curWordInd = 0;
+
+	// get the shell PID as a string to be used in variable expansion
+	// whenever the user enters $$
+	pid_t curPID = getpid();
+	char pidStr[maxStrLen];
+	sprintf(pidStr, "%d", curPID);	
 	
 	// read in the next word to wordBuf
 	while (*curBufInd < bufSize && curWordInd < maxStrLen && 
 		buffer[*curBufInd] != ' ' && buffer[*curBufInd] != '\t' &&
 		buffer[*curBufInd] != '\n') {
-		
-		wordBuf[curWordInd] = buffer[*curBufInd];
-		curWordInd++;
-		(*curBufInd)++;	
+	
+		// check for variable expansion
+		if (buffer[*curBufInd] == '$' && (*curBufInd) < bufSize - 1 &&
+			buffer[(*curBufInd) + 1] == '$') {
+
+			int pidInd = 0;
+			while (pidStr[pidInd] != '\0') {
+				wordBuf[curWordInd] = pidStr[pidInd];			
+	
+				curWordInd++;
+				pidInd++;
+			}
+	
+			(*curBufInd) += 2;
+		}
+		// no variable expansion, simply read in the next letter
+		else {
+			wordBuf[curWordInd] = buffer[*curBufInd];
+			curWordInd++;
+			(*curBufInd)++;
+		}		
 	}
 
 	// set the last character for the word as the null terminator
-	wordBuf[curWordInd] = '\0';
-
-	// check to see if the word is $$, in which case it should be
-	// changed to pid of the shell process
-	if (strcmp(wordBuf, "$$") == 0) {
-		pid_t curPID = getpid();
-		char pidStr[maxStrLen];
-		sprintf(pidStr, "%d", curPID);
-		strcpy(wordBuf, pidStr);
-	}
+	wordBuf[curWordInd] = '\0';	
 	
 	// clear out the whitespace until you hit a new word or the end of
 	// the line

@@ -7,11 +7,11 @@ SRCS = shellDriver.c smallsh.c
 
 HEADERS = smallsh.h
 
-shellDriver: ${OBJS} ${HEADERS}
-	gcc ${OBJS} -o shellDriver
+smallsh: ${OBJS} ${HEADERS}
+	gcc ${OBJS} -o smallsh
 
 ${OBJS}: ${SRCS}
 	gcc -std=c99 -c $(@:.o=.c)
 
 clean:
-	rm *.o shellDriver
+	rm *.o smallsh
