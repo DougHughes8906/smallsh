@@ -311,10 +311,10 @@ void executeOther(int maxStrLen, int numArgs, char** argms,
 				// wait for the child process to complete
 				waitpid(spawnpid, &childExitStat, 0);
 				foreActive = 0;
-				if (sigRaised) {
-					// see if a SIGTSTP signal was raised as the process
-					// was running. In which case foreground only mode
-					// should be toggled
+				// see if a SIGTSTP signal was raised as the process
+				// was running. In which case foreground only mode
+				// should be toggled
+				if (sigRaised) {		
 					if (bkgOn) {
 						bkgOn = 0;
 						printf("Entering foreground-only mode (& is now ignored)\n");
@@ -671,7 +671,7 @@ void runShell() {
 	// normally and 0 if it was terminated with a signal
 	int exitLast = 1;
 
- 
+	// continue to run the shell until an exit command is entered 
   while (strcmp(command, exitStr) != 0) {
 
     // action the last issued command (which can't be exit)
